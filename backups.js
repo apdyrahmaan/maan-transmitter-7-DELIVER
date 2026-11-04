@@ -5,9 +5,14 @@ const {
     createRemoteBackup,
     listRemoteBackups,
     getRemoteBackup
-} = require("./supabase-store");
+} = require("./netlify/lib/backup-store");
 
-const backupDirectory = path.join(__dirname, "data", "backups");
+// Netlify functions set MAAN_REMOTE_STORAGE before handling a request.
+function useRemoteStorage() {
+    return process.env.MAAN_REMOTE_STORAGE === "1";
+}
+
+const backupDirectory = path.join(typeof __dirname === "string" ? __dirname : process.cwd(), "data", "backups");
 
 function ensureBackupDirectory() {
     fs.mkdirSync(backupDirectory, { recursive: true });
@@ -52,7 +57,7 @@ function createBackup(database, type = "manual") {
 }
 
 async function createBackupAsync(database, type = "manual") {
-    if (process.env.NETLIFY) return createRemoteBackup(database, type);
+    if (useRemoteStorage()) return createRemoteBackup(database, type);
     return createBackup(database, type);
 }
 
@@ -76,12 +81,12 @@ function listBackups() {
 }
 
 async function listBackupsAsync() {
-    if (process.env.NETLIFY) return listRemoteBackups();
+    if (useRemoteStorage()) return listRemoteBackups();
     return listBackups();
 }
 
 async function getBackupBufferAsync(filename) {
-    if (process.env.NETLIFY) return getRemoteBackup(filename);
+    if (useRemoteStorage()) return getRemoteBackup(filename);
     const backupPath = getBackupPath(filename);
     if (!backupPath || !fs.existsSync(backupPath)) return null;
     return fs.promises.readFile(backupPath);

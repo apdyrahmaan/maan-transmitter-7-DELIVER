@@ -21,7 +21,25 @@ const {
 // SECRET KEY
 // ==========================================
 
+let jwtSecretOverride = null;
+
+// Used on Netlify, where the secret comes from JWT_SECRET or the database.
+function setJwtSecret(secret) {
+    if (typeof secret !== "string" || secret.length < 32) {
+        throw new Error("JWT_SECRET must be at least 32 characters long.");
+    }
+    jwtSecretOverride = secret;
+}
+
+let cachedLocalSecret = null;
 function getJwtSecret() {
+    if (jwtSecretOverride) return jwtSecretOverride;
+    if (cachedLocalSecret) return cachedLocalSecret;
+    cachedLocalSecret = resolveLocalJwtSecret();
+    return cachedLocalSecret;
+}
+
+function resolveLocalJwtSecret() {
     if (process.env.JWT_SECRET) {
         if (process.env.JWT_SECRET.length < 32) {
             throw new Error("JWT_SECRET must be at least 32 characters long.");
@@ -32,7 +50,7 @@ function getJwtSecret() {
         throw new Error("JWT_SECRET must be configured in production.");
     }
 
-    const secretFile = path.join(__dirname, "data", ".jwt-secret");
+    const secretFile = path.join(typeof __dirname === "string" ? __dirname : process.cwd(), "data", ".jwt-secret");
     try {
         const secret = fs.readFileSync(secretFile, "utf8").trim();
         if (secret.length < 32) throw new Error("The local JWT secret is invalid.");
@@ -54,7 +72,6 @@ function getJwtSecret() {
     }
 }
 
-const JWT_SECRET = getJwtSecret();
 
 
 // ==========================================
@@ -140,7 +157,7 @@ async function login(
     const user =
         database.users.find(
             item =>
-                item.email.toLowerCase() === identifier.toLowerCase()
+                String(item.email || "").toLowerCase() === String(identifier || "").toLowerCase()
                 || (item.username && item.username.toLowerCase() === identifier.toLowerCase())
         );
 
@@ -160,10 +177,9 @@ async function login(
 
 
     const passwordCorrect =
-        await bcrypt.compare(
-            password,
-            user.password
-        );
+        typeof password === "string" && user.password
+            ? await bcrypt.compare(password, user.password)
+            : false;
 
 
     if (!passwordCorrect) {
@@ -180,6 +196,23 @@ async function login(
     }
 
 
+    return createSession(user);
+}
+
+function publicUser(user) {
+    return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        username: user.username || "",
+        phone: user.phone || "",
+        role: user.role,
+        avatar: user.avatar || ""
+    };
+}
+
+function createSession(user) {
+
     const token =
         jwt.sign(
 
@@ -192,7 +225,7 @@ async function login(
 
             },
 
-            JWT_SECRET,
+            getJwtSecret(),
 
             {
                 expiresIn: "7d"
@@ -210,20 +243,7 @@ async function login(
 
         token,
 
-        user: {
-
-            id: user.id,
-
-            name: user.name,
-            email: user.email,
-            username: user.username || "",
-            phone: user.phone || "",
-
-            role: user.role,
-
-            avatar: user.avatar || ""
-
-        }
+        user: publicUser(user)
 
     };
 
@@ -240,7 +260,7 @@ function verifyToken(token) {
 
         return jwt.verify(
             token,
-            JWT_SECRET
+            getJwtSecret()
         );
 
     } catch (error) {
@@ -321,6 +341,12 @@ module.exports = {
     createAdmin,
 
     login,
+
+    createSession,
+
+    publicUser,
+
+    setJwtSecret,
 
     verifyToken,
 

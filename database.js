@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const dataFolder = path.join(__dirname, "data");
+const dataFolder = path.join(typeof __dirname === "string" ? __dirname : process.cwd(), "data");
 const databaseFile = path.join(dataFolder, "database.json");
 let requestDatabase = null;
 let requestDatabaseRevision = null;
@@ -46,6 +46,28 @@ const defaultDatabase = {
     }
 };
 
+function getDefaultDatabase() {
+    return JSON.parse(JSON.stringify(defaultDatabase));
+}
+
+// Ensures every expected collection and setting exists (e.g. after restoring an older backup).
+function normalizeDatabase(data) {
+    const source = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    const result = { ...getDefaultDatabase(), ...source };
+    for (const [key, value] of Object.entries(defaultDatabase)) {
+        if (Array.isArray(value) && !Array.isArray(result[key])) result[key] = [];
+    }
+    result.settings = {
+        ...defaultDatabase.settings,
+        ...(source.settings && typeof source.settings === "object" ? source.settings : {}),
+        menuItems: {
+            ...defaultDatabase.settings.menuItems,
+            ...(source.settings && source.settings.menuItems ? source.settings.menuItems : {})
+        }
+    };
+    return result;
+}
+
 function createDatabase() {
 
     if (!fs.existsSync(dataFolder)) {
@@ -72,7 +94,7 @@ function readDatabase() {
         "utf8"
     );
 
-    return JSON.parse(data);
+    return normalizeDatabase(JSON.parse(data));
 }
 
 function saveDatabase(data) {
@@ -203,13 +225,16 @@ function updateById(
 
 function generateId(prefix) {
 
-    const random =
-        Math.floor(
-            100000 +
-            Math.random() * 900000
-        );
-
-    return `${prefix}-${random}`;
+    const database = readDatabase();
+    const existing = new Set();
+    for (const value of Object.values(database)) {
+        if (Array.isArray(value)) value.forEach(item => item && existing.add(item.id));
+    }
+    let id;
+    do {
+        id = `${prefix}-${crypto.randomInt(100000, 1000000)}`;
+    } while (existing.has(id));
+    return id;
 }
 
 function currentDate() {
@@ -225,6 +250,8 @@ function currentDate() {
 
 module.exports = {
     createDatabase,
+    getDefaultDatabase,
+    normalizeDatabase,
     readDatabase,
     saveDatabase,
     addRecord,

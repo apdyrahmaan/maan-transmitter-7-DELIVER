@@ -5,12 +5,8 @@
 
 [functions]
   node_bundler = "esbuild"
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/api/:splat"
-  status = 200
-  force = true
+  # pdfkit and xlsx read data files at runtime, so ship them unbundled.
+  external_node_modules = ["pdfkit", "xlsx"]
 
 [functions."automatic-backup"]
   schedule = "10 21 * * *"
